@@ -6,6 +6,5 @@ __pycache__/
 *.pth
 *.npz
 outputs/
-PRM/outputs/
-PRM/create_figures/outputs/
+create_figures/outputs/
 /data/
