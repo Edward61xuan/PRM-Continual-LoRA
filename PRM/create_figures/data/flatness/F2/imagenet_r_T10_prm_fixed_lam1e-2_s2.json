@@ -1,0 +1,15 @@
+{
+  "method": "prm_fixed",
+  "task": 10,
+  "AAA": 0.8571237048083198,
+  "last_acc": 0.8119588208693533,
+  "forgetting": 0.05394000945358083,
+  "BWT": -0.05394000945358083,
+  "FWT": 0.0,
+  "prm_alpha": 0.8,
+  "prm_method": "fixed",
+  "prm_prox_weight": 0.01,
+  "consolidation": false,
+  "model": "vit_base_patch16_224.augreg2_in21k_ft_in1k",
+  "seed": 2
+}

@@ -1,0 +1,10 @@
+{
+  "method": "pm",
+  "task": 10,
+  "AAA": 0.770384044996045,
+  "last_acc": 0.69310522758239,
+  "forgetting": 0.07883612172286378,
+  "BWT": -0.07729524513931052,
+  "FWT": 0.0,
+  "merge_alpha_override": null
+}

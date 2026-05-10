@@ -1,0 +1,10 @@
+{
+  "method": "lora_baseline",
+  "task": 10,
+  "AAA": 0.49296101611817605,
+  "last_acc": 0.2614118457060739,
+  "forgetting": 0.7269632675688736,
+  "BWT": -0.7269632675688736,
+  "FWT": 0.0,
+  "merge_alpha_override": null
+}

@@ -1,0 +1,10 @@
+{
+  "method": "became",
+  "task": 10,
+  "AAA": 0.7815881813035703,
+  "last_acc": 0.7132337895661208,
+  "forgetting": 0.08487854594057956,
+  "BWT": -0.08435446404696215,
+  "FWT": 0.0,
+  "merge_alpha_override": null
+}

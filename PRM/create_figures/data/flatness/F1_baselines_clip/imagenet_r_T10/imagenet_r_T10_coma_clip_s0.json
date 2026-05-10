@@ -1,0 +1,10 @@
+{
+  "method": "coma",
+  "task": 10,
+  "AAA": 0.744024307689531,
+  "last_acc": 0.6248974780358031,
+  "forgetting": 0.30915410651849357,
+  "BWT": -0.30915410651849357,
+  "FWT": 0.0,
+  "merge_alpha_override": null
+}

@@ -1,0 +1,15 @@
+{
+  "method": "prm_theory",
+  "task": 10,
+  "AAA": 0.8470140384778897,
+  "last_acc": 0.7765822493613262,
+  "forgetting": 0.0563003211082675,
+  "BWT": -0.05596259736628844,
+  "FWT": 0.0,
+  "prm_alpha": 0.8,
+  "prm_method": "theory",
+  "prm_prox_weight": 0.01,
+  "consolidation": false,
+  "model": "vit_base_patch16_clip_224.openai",
+  "seed": 2
+}

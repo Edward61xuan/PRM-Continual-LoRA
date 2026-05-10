@@ -1,0 +1,10 @@
+{
+  "method": "model_avg",
+  "task": 10,
+  "AAA": 0.7768328647891224,
+  "last_acc": 0.7093760066545043,
+  "forgetting": 0.0913970369524265,
+  "BWT": -0.09123144662290175,
+  "FWT": 0.0,
+  "merge_alpha_override": null
+}

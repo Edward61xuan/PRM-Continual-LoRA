@@ -1,0 +1,10 @@
+{
+  "method": "cofima",
+  "task": 10,
+  "AAA": 0.7058253373102729,
+  "last_acc": 0.609125193249998,
+  "forgetting": 0.31094072741853307,
+  "BWT": -0.31094072741853307,
+  "FWT": 0.0,
+  "merge_alpha_override": null
+}
