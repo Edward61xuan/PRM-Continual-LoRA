@@ -20,5 +20,5 @@ under `train/` and `val/`.
   directory. The official `train_test_split.txt` defines `train` and `val`.
 
 The exact ImageNet-R and S-DomainNet manifests are bundled under `manifests/`
-and SHA-256-verified before use. `tools/imagenet_r_classnames.txt` contains the
-200 names used by the optional image-text head.
+and versioned with the repository. `tools/imagenet_r_classnames.txt` contains
+the 200 names used by the optional image-text head.

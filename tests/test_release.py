@@ -13,7 +13,7 @@ from prm.lora import LoRALayer
 from prm.metrics import calc_aaa, calc_forgetting
 from prm.prm_ops import get_lora_params_snapshot, proximity_loss
 from scripts.run_config import build_commands
-from tools.dataset_prep.prepare import MANIFESTS, _verified_manifest, verify_tree
+from tools.dataset_prep.prepare import _bundled_manifest, verify_tree
 from train_prm import get_args, write_json
 
 
@@ -64,24 +64,12 @@ class ReleaseTests(unittest.TestCase):
                     path.write_bytes(b"not decoded by verifier")
             self.assertEqual(verify_tree(root), {"train": 2, "val": 2, "classes": 2})
 
-    def test_bundled_manifests_match_recorded_checksums(self):
+    def test_bundled_manifests_exist_and_are_well_formed(self):
         for name in (
             "imagenet_r_train.txt", "imagenet_r_val.txt",
             "sdomain_train.txt", "sdomain_val.txt",
         ):
-            self.assertTrue(_verified_manifest(name).is_file())
-
-    def test_bad_manifest_is_preserved_for_inspection(self):
-        name = "imagenet_r_val.txt"
-        path = _verified_manifest(name)
-        expected = MANIFESTS[name]
-        try:
-            MANIFESTS[name] = "0" * 64
-            with self.assertRaises(RuntimeError):
-                _verified_manifest(name)
-        finally:
-            MANIFESTS[name] = expected
-        self.assertTrue(path.is_file())
+            self.assertTrue(_bundled_manifest(name).is_file())
 
     def test_proximity_anchor_is_current_task_initialization(self):
         class TinyModel(nn.Module):

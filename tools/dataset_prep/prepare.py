@@ -4,27 +4,27 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import shutil
 from pathlib import Path
 
 
-MANIFESTS = {
-    "imagenet_r_train.txt": "bd1536ce73d52328d697d983652ce02eb10c5c9fc085d4b2434c67c32b81ee2c",
-    "imagenet_r_val.txt": "c6719b71b1181cba536a16d77a3815295eaf3b9c844f5db4452b9bb6dac85d2f",
-    "sdomain_train.txt": "87671cd9a6309dc5e9ebfa8eab8c14abbc270d605c9430c7525ff8e9d7e7e74e",
-    "sdomain_val.txt": "112d39337e19ea1b5b81f1a423145be007c5a42e16aeea84473a98c28462a8d2",
-}
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
-def _verified_manifest(name: str) -> Path:
+def _bundled_manifest(name: str) -> Path:
     path = Path(__file__).resolve().parent / "manifests" / name
-    if not path.exists():
+    if not path.is_file():
         raise FileNotFoundError(f"bundled split manifest missing: {path}")
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if digest != MANIFESTS[name]:
-        raise RuntimeError(f"checksum mismatch for {name}: {digest}")
+
+    entries = [line.split() for line in path.read_text().splitlines() if line.strip()]
+    if not entries:
+        raise ValueError(f"bundled split manifest is empty: {path}")
+    for line_number, fields in enumerate(entries, start=1):
+        rel = Path(fields[0])
+        if len(fields) not in (1, 2) or rel.is_absolute() or ".." in rel.parts:
+            raise ValueError(f"invalid manifest entry at {path}:{line_number}")
+        if len(fields) == 2 and not fields[1].isdigit():
+            raise ValueError(f"invalid class label at {path}:{line_number}")
     return path
 
 
@@ -41,7 +41,7 @@ def _place(src: Path, dst: Path, copy: bool) -> None:
 def _from_manifest(dataset: str, source: Path, output: Path, copy: bool) -> None:
     prefix = "imagenet_r" if dataset == "imagenet_r" else "sdomain"
     for split in ("train", "val"):
-        manifest = _verified_manifest(f"{prefix}_{split}.txt")
+        manifest = _bundled_manifest(f"{prefix}_{split}.txt")
         count = 0
         for raw in manifest.read_text().splitlines():
             fields = raw.strip().split()

@@ -37,7 +37,7 @@ python -m pip install -r requirements.txt
 ## Prepare data
 
 Loaders expect `DATA_ROOT/{train,val}/<class>/<image>`. The preparation utility
-uses the bundled paper/P&M-compatible manifests and verifies their SHA-256 digests:
+uses the bundled paper/P&M-compatible train/validation manifests:
 
 ```bash
 python tools/dataset_prep/prepare.py imagenet_r \
