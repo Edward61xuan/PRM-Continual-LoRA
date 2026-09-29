@@ -5,12 +5,16 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import torch
+from torch import nn
 
 from prm.continual import ClassIncrementalManager
+from prm.lora import LoRALayer
 from prm.metrics import calc_aaa, calc_forgetting
+from prm.prm_ops import get_lora_params_snapshot, proximity_loss
 from scripts.run_config import build_commands
-from tools.dataset_prep.prepare import _verified_manifest, verify_tree
-from train_prm import get_args
+from tools.dataset_prep.prepare import MANIFESTS, _verified_manifest, verify_tree
+from train_prm import get_args, write_json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +70,64 @@ class ReleaseTests(unittest.TestCase):
             "sdomain_train.txt", "sdomain_val.txt",
         ):
             self.assertTrue(_verified_manifest(name).is_file())
+
+    def test_bad_manifest_is_preserved_for_inspection(self):
+        name = "imagenet_r_val.txt"
+        path = _verified_manifest(name)
+        expected = MANIFESTS[name]
+        try:
+            MANIFESTS[name] = "0" * 64
+            with self.assertRaises(RuntimeError):
+                _verified_manifest(name)
+        finally:
+            MANIFESTS[name] = expected
+        self.assertTrue(path.is_file())
+
+    def test_proximity_anchor_is_current_task_initialization(self):
+        class TinyModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.adapter = LoRALayer(4, 3, rank=2, eps=0.5, num_tasks=2)
+
+        model = TinyModel()
+        model.adapter.cal_alpha(1.0)
+        model.adapter.update(1)
+        for parameter in model.parameters():
+            parameter.requires_grad_(False)
+        model.adapter.lora_A[1].weight.requires_grad_(True)
+        model.adapter.lora_B[1].weight.requires_grad_(True)
+
+        snapshot = get_lora_params_snapshot(model)
+        self.assertTrue(snapshot)
+        self.assertTrue(all(".1.weight" in name for name in snapshot))
+        self.assertEqual(proximity_loss(model, snapshot).item(), 0.0)
+
+        with torch.no_grad():
+            model.adapter.lora_B[0].weight.add_(1.0)
+        self.assertEqual(proximity_loss(model, snapshot).item(), 0.0)
+
+        with torch.no_grad():
+            model.adapter.lora_B[1].weight.add_(1.0)
+        self.assertGreater(proximity_loss(model, snapshot).item(), 0.0)
+
+    def test_result_writer_creates_parent_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "nested" / "result.json"
+            write_json(str(destination), {"AAA": 0.5})
+            self.assertTrue(destination.is_file())
+
+    def test_readme_contains_complete_paper_results_and_citation(self):
+        readme = (ROOT / "README.md").read_text()
+        self.assertNotIn("reported on arXiv", readme)
+        self.assertIn("reported in the paper", readme)
+        self.assertIn("Qiu et al., 2025", readme)
+        self.assertIn("@article{liu2026mergecoefficient", readme)
+        for setting in (
+            "ImageNet-R 5T", "ImageNet-R 10T", "ImageNet-R 20T",
+            "CIFAR-100 10T", "CIFAR-100 20T", "S-DomainNet 5T",
+            "CUB-200 10T",
+        ):
+            self.assertIn(setting, readme)
 
     def test_sweep_wrappers_dry_run(self):
         for script in ("run_alpha_sweep.py", "run_lambda_sweep.py"):

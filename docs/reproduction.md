@@ -35,7 +35,8 @@ seen-task accuracy and AAA is average anytime accuracy, in percentage points.
 | S-DomainNet 5T | 84.74 ± 0.46 | 89.33 ± 0.59 | 84.76 ± 0.40 | 89.26 ± 0.52 |
 | CUB-200 10T | 73.65 ± 1.89 | 80.81 ± 0.43 | 74.07 ± 1.66 | 81.04 ± 0.74 |
 
-The repository records raw per-seed JSON rather than asserting a tolerance:
-minor nondeterminism can arise from CUDA kernels and dependency/hardware
-differences. Report the environment, GPU, three raw seeds, mean, and population
-standard deviation when comparing a reproduction to these values.
+The launchers generate raw per-seed JSON files under `outputs/`; main-table
+per-seed outputs are not pre-bundled in the repository. Minor nondeterminism can
+arise from CUDA kernels and dependency/hardware differences. Report the
+environment, GPU, three generated seeds, mean, and population standard
+deviation when comparing a reproduction to these values.

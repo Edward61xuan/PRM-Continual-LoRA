@@ -103,12 +103,13 @@ def calc_bwt(acc_mat, current_taskid):
 
 
 def calc_fwt(acc_mat, current_taskid):
-    """Forward Transfer (FWT).
+    """Forward Transfer (FWT) for a matrix with explicit pre-task evaluations.
 
     FWT_t = (1/t) * sum_{i=1..t} A_{i-1,i}
 
-    Measures how well the model performs on task i before training on it
-    (using knowledge from previous tasks).
+    Measures how well the model performs on task i before training on it.
+    Callers must populate A[i-1, i]; the main PRM training loop intentionally
+    does not report FWT because it evaluates only tasks already seen.
 
     Args:
         acc_mat:         (T, T) accuracy matrix.

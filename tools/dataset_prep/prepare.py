@@ -24,7 +24,6 @@ def _verified_manifest(name: str) -> Path:
         raise FileNotFoundError(f"bundled split manifest missing: {path}")
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if digest != MANIFESTS[name]:
-        path.unlink(missing_ok=True)
         raise RuntimeError(f"checksum mismatch for {name}: {digest}")
     return path
 

@@ -11,13 +11,16 @@ PRM decomposes rehearsal-free continual learning into 3 stages per task t:
 
   Stage 1 -- Fast Proposal:
       Train a proximity-regularized LoRA adapter (the "fast branch"):
-          w_t = argmin  L_CE(x; theta + w) + lambda_w * ||w - w_{t-1}||^2
+          (A_t, B_t) = argmin L_CE(x; theta_{t-1} + B_t A_t)
+                         + lambda_w * (||A_t - A_t^(0)||^2
+                                       + ||B_t - B_t^(0)||^2)
+      A_t^(0), B_t^(0) are the freshly allocated task-t initializations.
       Perturbation-aware training samples perturbation in {0, +1, -1} to
       produce the noise-injected weight: (1 + perturbation * eps) * B_t @ A_t
 
   Stage 2 -- Write-Back:
       Merge the fast branch into the shared model:
-          theta_t = theta_{t-1} + alpha_t * (w_t - theta_{t-1})
+          theta_t = theta_{t-1} + alpha_t * (B_t @ A_t)
       PRM-fixed uses a constant alpha (default 0.8).
       PRM-Fisher uses P&M's Fisher-derived per-task coefficient.
 
@@ -107,7 +110,6 @@ from prm.metrics import (
     calc_accuracy,
     calc_aaa,
     calc_bwt,
-    calc_fwt,
     calc_forgetting,
 )
 
@@ -252,6 +254,13 @@ def seed_everything(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def write_json(path, payload):
+    """Write JSON after creating the destination's parent directory."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
 
 
 def set_model_mode(model, training, taskid=0):
@@ -946,7 +955,6 @@ def main():
         forgetting = calc_forgetting(acc_mat, taskid)
         aaa = calc_aaa(acc_list, taskid)
         bwt = calc_bwt(acc_mat, taskid)
-        fwt = calc_fwt(acc_mat, taskid)
         elapsed = ttime() - start_time
 
         print(f"\n  >> Task [{taskid+1}/{nt}] Results:")
@@ -954,7 +962,6 @@ def main():
         print(f"     Forgetting: {forgetting:.2%}")
         print(f"     AAA:        {aaa:.2%}")
         print(f"     BWT:        {bwt:+.2%}")
-        print(f"     FWT:        {fwt:+.2%}")
         print(f"     Time:       {elapsed:.0f}s")
 
         # Save results incrementally
@@ -966,7 +973,6 @@ def main():
                 "last_acc": float(avg_acc),
                 "forgetting": float(forgetting),
                 "BWT": float(bwt),
-                "FWT": float(fwt),
                 "prm_alpha": args.prm_alpha,
                 "prm_method": args.prm_method,
                 "prm_prox_weight": args.prm_prox_weight,
@@ -984,8 +990,7 @@ def main():
                     "gate_late_k": args.gate_late_k,
                     "gate_rescale_mean": not args.gate_no_rescale,
                 })
-            with open(args.results_file, "w") as f:
-                json.dump(results, f, indent=2)
+            write_json(args.results_file, results)
 
             # Per-task sidecar for flatness-mechanism analysis.
             meta = per_task_meta.get(taskid, {})
@@ -1010,8 +1015,7 @@ def main():
     # Final summary
     print(f"\n{'='*80}")
     print(f"FINAL [{method_tag}]: AAA={calc_aaa(acc_list, nt-1):.2%}, "
-          f"BWT={calc_bwt(acc_mat, nt-1):+.2%}, "
-          f"FWT={calc_fwt(acc_mat, nt-1):+.2%}")
+          f"BWT={calc_bwt(acc_mat, nt-1):+.2%}")
     print(f"{'='*80}")
 
 

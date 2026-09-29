@@ -2,7 +2,7 @@
 PRM core operations: proximity regularization, write-back, and consolidation.
 
 This module implements the core mechanics of the PRM algorithm:
-  - Proximity loss: ||w_t - w_{t-1}||^2 regularization on LoRA params
+  - Proximity loss: task-t LoRA factors stay near their own initial values
   - Parameter snapshot: capture LoRA state before training for the proximity anchor
   - Write-back: merge fast branch into shared model (fixed or Fisher)
   - Consolidation: post-merge conservative re-training (Stage 3)
@@ -17,9 +17,9 @@ from torch.cuda.amp.grad_scaler import GradScaler
 def get_lora_params_snapshot(model):
     """Snapshot current LoRA parameters for use as proximity anchor.
 
-    Called at the start of Stage 1 (fast proposal) to capture the
-    current LoRA state w_{t-1}. The proximity loss then penalizes
-    deviation from this snapshot during training.
+    Called after allocating the task-t LoRA pair and before its first update.
+    Only the trainable task-t factors are captured, so this snapshot represents
+    (A_t^(0), B_t^(0)), not the previous task's solution.
 
     Args:
         model: The ViT model with LoRA adapters.
@@ -40,8 +40,9 @@ def proximity_loss(model, snapshot):
     Implements the regularization term:
         L_prox = sum_i ||w_i - w_i^{snapshot}||^2
 
-    This encourages the fast branch to stay close to the previous solution,
-    preventing catastrophic forgetting during the proposal stage.
+    This constrains the radius travelled by the current task's LoRA factors.
+    Previous tasks enter the forward pass through the frozen running model;
+    they are not the anchor of this penalty.
 
     Args:
         model:    The ViT model with LoRA adapters.
@@ -65,7 +66,7 @@ def prm_write_back(model, alpha, task_id):
     """Stage 2: Write-back -- merge fast branch into shared model.
 
     For each LoRA module, records the merge coefficient alpha:
-        theta_t = theta_{t-1} + alpha * (w_t - theta_{t-1})
+        theta_t = theta_{t-1} + alpha * (B_t @ A_t)
 
     This is implemented via LoRALayer.cal_alpha(), which stores alpha_t
     and shifts the effective weight computation.
