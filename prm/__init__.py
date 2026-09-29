@@ -12,7 +12,7 @@ from .lora import LoRALayer, QkvWithLoRA, apply_lora
 from .prm_ops import (
     proximity_loss,
     get_lora_params_snapshot,
-    compute_prm_theory_alpha,
+    compute_prm_fisher_alpha,
     compute_prm_budgeted_alpha,
     consolidate,
 )
@@ -30,7 +30,7 @@ __all__ = [
     "apply_lora",
     "proximity_loss",
     "get_lora_params_snapshot",
-    "compute_prm_theory_alpha",
+    "compute_prm_fisher_alpha",
     "compute_prm_budgeted_alpha",
     "consolidate",
     "accumulate_fisher",

@@ -155,7 +155,7 @@ def _draw_panel_a(ax_loss, ax_acc, base, prox):
                    frameon=False, fontsize=8 * FONT_SCALE, ncol=2,
                    handlelength=2.0, columnspacing=0.8)
     style_handles = [
-        Line2D([0], [0], color="0.2", lw=LW_REF, ls="-", label=r"theory $\alpha$"),
+        Line2D([0], [0], color="0.2", lw=LW_REF, ls="-", label=r"Fisher $\alpha$"),
         Line2D([0], [0], color="0.2", lw=LW_REF, ls="--", label=r"empirical optimum"),
         Line2D([0], [0], color=FIX_COLOR, lw=LW_REF, ls=":", label=r"fixed-$\alpha$ ref."),
     ]

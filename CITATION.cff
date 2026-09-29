@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the arXiv paper below."
+title: "Proximity Regularized Merging for Continual LoRA Adaptation"
+type: software
+license: MIT
+authors:
+  - family-names: Liu
+    given-names: Yixuan
+  - family-names: Sun
+    given-names: Yuhao
+  - family-names: Song
+    given-names: Sen
+  - family-names: Li
+    given-names: Jin
+repository-code: "https://github.com/Edward61xuan/DSSPM"
+date-released: 2026-09-29
+preferred-citation:
+  type: article
+  title: "When the Merge Coefficient Stops Mattering: Proximity Regularized Merging for Continual LoRA Adaptation"
+  authors:
+    - family-names: Liu
+      given-names: Yixuan
+    - family-names: Sun
+      given-names: Yuhao
+    - family-names: Song
+      given-names: Sen
+    - family-names: Li
+      given-names: Jin
+  year: 2026
+  url: "https://arxiv.org/abs/2609.32332"
+  identifiers:
+    - type: other
+      value: "arXiv:2609.32332"
+      description: arXiv identifier

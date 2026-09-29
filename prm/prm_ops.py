@@ -4,7 +4,7 @@ PRM core operations: proximity regularization, write-back, and consolidation.
 This module implements the core mechanics of the PRM algorithm:
   - Proximity loss: ||w_t - w_{t-1}||^2 regularization on LoRA params
   - Parameter snapshot: capture LoRA state before training for the proximity anchor
-  - Write-back: merge fast branch into shared model (fixed, theory, budgeted)
+  - Write-back: merge fast branch into shared model (fixed or Fisher)
   - Consolidation: post-merge conservative re-training (Stage 3)
 """
 
@@ -72,7 +72,7 @@ def prm_write_back(model, alpha, task_id):
 
     For task 0, alpha is always 1.0 (first task fully written).
     For subsequent tasks, alpha is either fixed (PRM-fixed) or
-    computed from Fisher information (PRM-theory).
+    computed from Fisher information (PRM-Fisher).
 
     Args:
         model:   The ViT model with LoRA adapters.
@@ -94,13 +94,13 @@ def prm_write_back(model, alpha, task_id):
 
 
 # ---------------------------------------------------------------------------
-# PRM-theory: Fisher-optimal per-task alpha
+# PRM-Fisher: Fisher-derived per-task alpha
 # ---------------------------------------------------------------------------
 
-def compute_prm_theory_alpha(model, fisher, task_id, embed_dim=768):
-    """Compute the Fisher-optimal merge alpha for PRM-theory.
+def compute_prm_fisher_alpha(model, fisher, task_id, embed_dim=768):
+    """Compute the Fisher-derived merge alpha for PRM-Fisher.
 
-    PRM-theory uses the same Fisher-based formula as P&M, but is applied
+    PRM-Fisher uses the same Fisher-based formula as P&M, but is applied
     within the PRM framework (after proximity-regularized fast proposal).
 
     The formula minimizes expected loss increase across all seen tasks:

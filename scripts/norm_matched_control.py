@@ -91,7 +91,8 @@ def get_args():
                    choices=("cifar100", "imagenet_r", "sdomainet", "domainnet", "cub200"))
     p.add_argument("--data_root", required=True)
     p.add_argument("--num_tasks", type=int, required=True)
-    p.add_argument("--shuffle_classes", action="store_true", default=True)
+    p.add_argument("--shuffle_classes", action=argparse.BooleanOptionalAction,
+                   default=True)
     p.add_argument("--model", type=str, default="vit_base_patch16_clip_224.openai")
     p.add_argument("--logit_type", type=str, default="head_out",
                    choices=("head_out", "sim_imgtext"))
@@ -102,7 +103,8 @@ def get_args():
     p.add_argument("--temperature", type=float, default=28.0)
     p.add_argument("--eval_batch_size", type=int, default=100)
     p.add_argument("--eval_workers", type=int, default=2)
-    p.add_argument("--use_amp", action="store_true", default=True)
+    p.add_argument("--use_amp", action=argparse.BooleanOptionalAction,
+                   default=True)
 
     p.add_argument("--alpha_grid", type=float, nargs="+",
                    default=[round(i * 0.05, 2) for i in range(21)])

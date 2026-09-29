@@ -3,7 +3,7 @@
 PRM: Proximity-Regularized Merging
 ==================================
 
-Train PRM-fixed on class-incremental benchmarks (ImageNet-R, CIFAR-100, SDomainNet).
+Train PRM-fixed or PRM-Fisher on class-incremental image benchmarks.
 
 Algorithm Overview
 ------------------
@@ -19,12 +19,9 @@ PRM decomposes rehearsal-free continual learning into 3 stages per task t:
       Merge the fast branch into the shared model:
           theta_t = theta_{t-1} + alpha_t * (w_t - theta_{t-1})
       PRM-fixed uses a constant alpha (default 0.8).
-      PRM-theory would compute Fisher-optimal per-task alpha (planned).
+      PRM-Fisher uses P&M's Fisher-derived per-task coefficient.
 
-  Stage 3 -- Consolidation (optional):
-      Further stabilize with conservative re-training (not yet implemented).
-
-Architecture: ViT-B/16 (CLIP pretrained) + per-task LoRA (rank 10) on K, V.
+Architecture: ViT-B/16 + per-task LoRA (rank 10) on K and V.
 
 Usage
 -----
@@ -77,7 +74,7 @@ from prm.prm_ops import (
     proximity_loss,
     get_lora_params_snapshot,
     prm_write_back,
-    compute_prm_theory_alpha,
+    compute_prm_fisher_alpha,
     compute_prm_budgeted_alpha,
     compute_writeability_gate,
     prm_write_back_gated,
@@ -122,8 +119,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Argument parsing
 # ---------------------------------------------------------------------------
 
-def get_args():
-    p = argparse.ArgumentParser(description="PRM-fixed continual learning")
+def get_args(argv=None):
+    p = argparse.ArgumentParser(description="PRM-fixed / PRM-Fisher continual learning")
 
     # Dataset
     p.add_argument("-d", "--dataset", type=str, required=True,
@@ -131,7 +128,8 @@ def get_args():
     p.add_argument("-dr", "--data_root", type=str, required=True,
                    help="Root dir with train/ and val/ subdirectories")
     p.add_argument("-t", "--num_tasks", type=int, default=10)
-    p.add_argument("--shuffle_classes", action="store_true", default=True)
+    p.add_argument("--shuffle_classes", action=argparse.BooleanOptionalAction,
+                   default=True, help="Shuffle classes with PCG64 (disable with --no-shuffle_classes)")
     p.add_argument("--seed", type=int, default=2024)
 
     # Model
@@ -164,7 +162,8 @@ def get_args():
     p.add_argument("--min_lr", type=float, default=1e-5)
     p.add_argument("--warmup_epochs", type=int, default=0)
     p.add_argument("--temperature", type=float, default=28.0)
-    p.add_argument("--use_amp", action="store_true", default=True)
+    p.add_argument("--use_amp", action=argparse.BooleanOptionalAction, default=True,
+                   help="Use CUDA automatic mixed precision (disable with --no-use_amp)")
     p.add_argument("--expand_times", type=int, default=10)
     p.add_argument("--workers", type=int, default=16)
     p.add_argument("--eval_workers", type=int, default=2)
@@ -172,54 +171,21 @@ def get_args():
 
     # PRM parameters
     p.add_argument("--prm_method", type=str, default="fixed",
-                   choices=("fixed", "theory", "budgeted", "gated", "empirical", "2d"),
-                   help="PRM variant: fixed (constant alpha), theory (Fisher-optimal), "
-                        "budgeted (drift-constrained), gated (writeability-gated), "
-                        "empirical (argmin J(alpha) = L_t^val + lam*a^2*q_t), "
-                        "2d (shared/residual decomposition with (alpha_s, alpha_r)).")
+                   choices=("fixed", "fisher"),
+                   help="Published variant: PRM-fixed or PRM-Fisher")
     p.add_argument("--prm_alpha", type=float, default=0.8,
                    help="Fixed merge coefficient for PRM-fixed write-back")
     p.add_argument("--prm_prox_weight", type=float, default=0.01,
                    help="Proximity regularization weight (lambda_w)")
-    p.add_argument("--drift_budget", type=float, default=5.0,
-                   help="Max Frobenius norm of total drift (PRM-budgeted)")
-
-    # GatedPRM parameters (only used when --prm_method gated)
-    p.add_argument("--gate_alpha_base", type=str, default="theory",
-                   choices=("fixed", "theory", "budgeted"),
-                   help="Which base alpha rule to use under gated write-back")
-    p.add_argument("--gate_a", type=float, default=1.0,
-                   help="Utility coefficient (log|delta|)")
-    p.add_argument("--gate_b", type=float, default=1.0,
-                   help="Conflict coefficient (accumulated Fisher)")
-    p.add_argument("--gate_c", type=float, default=1.0,
-                   help="Stability coefficient (late-epoch variance)")
-    p.add_argument("--gate_late_k", type=int, default=3,
-                   help="Number of final Stage 1 epochs to snapshot for stability")
-    p.add_argument("--gate_no_rescale", action="store_true",
-                   help="Disable per-layer mean=1 rescale (keep raw sigmoid gate in (0,1))")
-    p.add_argument("--gate_mode", type=str, default="element",
-                   choices=("element", "direction"),
-                   help="element: per-parameter gate on B@A; "
-                        "direction: SVD-based per-singular-direction gate")
-
-    # Stage 3: Consolidation
-    p.add_argument("--consolidation", action="store_true", default=False,
-                   help="Enable Stage 3 consolidation after write-back")
-    p.add_argument("--consolidation_epochs", type=int, default=2,
-                   help="Number of consolidation epochs")
-    p.add_argument("--consolidation_lr", type=float, default=1e-4,
-                   help="Learning rate for consolidation")
 
     # Output
     p.add_argument("--results_file", type=str, default="",
                    help="Path to save JSON results")
 
-    # Phase 1 diagnostic alpha sweep (applies to fixed / theory / budgeted)
+    # Diagnostic alpha sweep for the published coefficient rules.
     p.add_argument("--alpha_sweep_tasks", type=int, nargs="+", default=[],
                    help="1-indexed task IDs at which to run the diagnostic "
-                        "alpha sweep (e.g. 2 5 10). Empty = no sweep. Ignored "
-                        "for --prm_method gated.")
+                        "alpha sweep (e.g. 2 5 10). Empty = no sweep.")
     p.add_argument("--alpha_grid_n", type=int, default=20,
                    help="Number of alpha points in the diagnostic sweep grid "
                         "(default 20 => {0.00, 0.05, ..., 0.95}).")
@@ -263,34 +229,18 @@ def get_args():
                         "layer, head_t) to <dir>/delta_task{t}_seed{s}.pt and"
                         " exit.")
 
-    # Phase 2 empirical alpha selection (PRM-empirical)
-    p.add_argument("--empirical_lambda", type=float, default=1.0,
-                   help="Lambda in J(alpha) = L_t^val + lambda * alpha^2 * q_t.")
-    p.add_argument("--empirical_grid_n", type=int, default=11,
-                   help="Number of alpha points in the empirical search grid "
-                        "(default 11 => {0.0, 0.1, ..., 1.0}).")
-    p.add_argument("--empirical_sweep_out_dir", type=str, default="",
-                   help="Optional directory to dump per-task empirical search "
-                        "JSONs (diagnostic only).")
+    # Defaults retained for internal diagnostic code paths that are not part of
+    # the public release CLI. Published runs only accept fixed or fisher above.
+    p.set_defaults(
+        drift_budget=5.0, gate_alpha_base="fisher", gate_a=1.0, gate_b=1.0,
+        gate_c=1.0, gate_late_k=3, gate_no_rescale=False, gate_mode="element",
+        consolidation=False, consolidation_epochs=2, consolidation_lr=1e-4,
+        empirical_lambda=1.0, empirical_grid_n=11, empirical_sweep_out_dir="",
+        d2_mode="empirical", d2_alpha_s=1.0, d2_alpha_r=1.0,
+        d2_alpha_grid=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0], d2_late_k=3,
+    )
 
-    # Phase 4: 2D shared / residual merge (only used when --prm_method 2d)
-    p.add_argument("--d2_mode", type=str, default="empirical",
-                   choices=("empirical", "fixed"),
-                   help="empirical: search (alpha_s, alpha_r) via argmin J. "
-                        "fixed: use the supplied --d2_alpha_s / --d2_alpha_r.")
-    p.add_argument("--d2_alpha_s", type=float, default=1.0,
-                   help="Fixed alpha_s when --d2_mode fixed.")
-    p.add_argument("--d2_alpha_r", type=float, default=1.0,
-                   help="Fixed alpha_r when --d2_mode fixed.")
-    p.add_argument("--d2_alpha_grid", type=float, nargs="+",
-                   default=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
-                   help="1D grid used for both alpha_s and alpha_r in empirical "
-                        "2D search (full grid = cartesian product).")
-    p.add_argument("--d2_late_k", type=int, default=3,
-                   help="Snapshots of B@A collected during last K epochs "
-                        "(used to build delta_shared = mean(snapshots)).")
-
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
 # ---------------------------------------------------------------------------
@@ -536,7 +486,7 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
     # Cache per-task parameters (head weights, LoRA params)
     cache_task_params(model, taskid, param_cache)
 
-    # Fisher accumulation (needed for PRM-theory / PRM-gated; kept always-on
+    # Fisher accumulation (needed for PRM-Fisher and diagnostic analysis;
     # for flexibility and to enable post-hoc analysis).
     accumulate_fisher(model, dataloader, criterion, fisher, taskid)
 
@@ -600,9 +550,9 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
         elif args.gate_alpha_base == "fixed":
             alpha = args.prm_alpha
             print(f"  Write-back [PRM-gated/{args.gate_mode}/fixed]: alpha={alpha}")
-        elif args.gate_alpha_base == "theory":
-            alpha = compute_prm_theory_alpha(model, fisher, taskid)
-            print(f"  Write-back [PRM-gated/{args.gate_mode}/theory]: alpha={alpha:.6f} (Fisher-optimal)")
+        elif args.gate_alpha_base == "fisher":
+            alpha = compute_prm_fisher_alpha(model, fisher, taskid)
+            print(f"  Write-back [PRM-gated/{args.gate_mode}/fisher]: alpha={alpha:.6f} (Fisher-derived)")
         elif args.gate_alpha_base == "budgeted":
             alpha = compute_prm_budgeted_alpha(
                 model, taskid, args.drift_budget, base_alpha=args.prm_alpha,
@@ -693,11 +643,11 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
             _alpha_method = "empirical"
         elif sweep_requested:
             # Phase 1 diagnostic: dense sweep; finalize with method's own alpha.
-            theory_alpha_ref = compute_prm_theory_alpha(model, fisher, taskid)
+            fisher_alpha_ref = compute_prm_fisher_alpha(model, fisher, taskid)
             if args.prm_method == "fixed":
                 alpha = args.prm_alpha
-            elif args.prm_method == "theory":
-                alpha = theory_alpha_ref
+            elif args.prm_method == "fisher":
+                alpha = fisher_alpha_ref
             elif args.prm_method == "budgeted":
                 alpha = compute_prm_budgeted_alpha(
                     model, taskid, args.drift_budget, base_alpha=args.prm_alpha,
@@ -715,7 +665,7 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
                 param_cache, fisher, taskid,
                 save_path=sweep_save_path,
                 alpha_grid=sweep_grid,
-                theory_alpha=theory_alpha_ref,
+                theory_alpha=fisher_alpha_ref,
                 chosen_alpha=alpha,
                 tag=f"prm-{args.prm_method}_seed{args.seed}",
                 function_probe=args.function_probe,
@@ -728,9 +678,9 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
             if args.prm_method == "fixed":
                 alpha = args.prm_alpha
                 print(f"  Write-back [PRM-fixed]: alpha={alpha}")
-            elif args.prm_method == "theory":
-                alpha = compute_prm_theory_alpha(model, fisher, taskid)
-                print(f"  Write-back [PRM-theory]: alpha={alpha:.6f} (Fisher-optimal)")
+            elif args.prm_method == "fisher":
+                alpha = compute_prm_fisher_alpha(model, fisher, taskid)
+                print(f"  Write-back [PRM-Fisher]: alpha={alpha:.6f} (Fisher-derived)")
             elif args.prm_method == "budgeted":
                 alpha = compute_prm_budgeted_alpha(
                     model, taskid, args.drift_budget, base_alpha=args.prm_alpha,
@@ -840,27 +790,16 @@ def evaluate_all_tasks(model, args, cl_manager, pretrained_cfg, label_map, param
 
 def main():
     args = get_args()
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "PRM paper runs require a CUDA GPU. CPU-only utilities and tests "
+            "remain available; run training on a CUDA host."
+        )
     seed_everything(args.seed)
     method_tag = f"PRM-{args.prm_method}"
     print(f"[{method_tag}] dataset={args.dataset}, tasks={args.num_tasks}, "
           f"alpha={args.prm_alpha}, prox_weight={args.prm_prox_weight}, "
           f"rank={args.rank}, eps={args.eps}")
-    if args.prm_method == "budgeted":
-        print(f"  drift_budget={args.drift_budget}")
-    if args.prm_method == "gated":
-        print(f"  gate_mode={args.gate_mode}, "
-              f"gate_alpha_base={args.gate_alpha_base}, "
-              f"(a,b,c)=({args.gate_a},{args.gate_b},{args.gate_c}), "
-              f"late_k={args.gate_late_k}, "
-              f"rescale_mean={not args.gate_no_rescale}")
-    if args.prm_method == "2d":
-        print(f"  d2_mode={args.d2_mode}, late_k={args.d2_late_k}")
-        if args.d2_mode == "empirical":
-            print(f"  d2_alpha_grid={args.d2_alpha_grid}, lambda={args.empirical_lambda}")
-        else:
-            print(f"  d2_alpha_s={args.d2_alpha_s}, d2_alpha_r={args.d2_alpha_r}")
-    if args.consolidation:
-        print(f"  consolidation: {args.consolidation_epochs} epochs @ lr={args.consolidation_lr}")
 
     # Initialize continual learning manager
     train_dataset = get_path_dataset(args.dataset, args.data_root, train=False)

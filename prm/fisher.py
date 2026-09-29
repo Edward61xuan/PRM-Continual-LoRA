@@ -1,7 +1,7 @@
 """
 Fisher Information accumulation and optimal alpha computation.
 
-Used by the P&M (Propose & Merge) method and PRM-theory to compute
+Used by the P&M (Propose & Merge) method and PRM-Fisher to compute
 curvature-aware merge coefficients. The Fisher diagonal approximates
 the importance of each weight dimension for each task.
 

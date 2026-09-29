@@ -7,7 +7,7 @@ Outputs into paper/figures_draft/fig1{a,b,c}/.
          Two stacked panels (top=old-task loss L_<t, bottom=seen-task acc
          Acc_seen) with PM (gray) and PRM-fixed (red) curves, three-seed
          mean +/- std shading. Vertical markers for fixed alpha=0.8,
-         PM theory alpha, PM empirical optimum alpha, PRM theory alpha
+         PM Fisher alpha, PM empirical optimum alpha, PRM Fisher alpha
          (when distinct from PM), PRM empirical optimum alpha.
 
   fig1b: lambda_prox-by-alpha heatmap of Acc_seen at tasks 2/5/10.
@@ -153,7 +153,7 @@ def make_fig1a(task_str: str = "05", out_dir: str = None):
     pm_acc_emp = float(alphas[int(np.argmax(A_pm_m))])
     prm_acc_emp = float(alphas[int(np.argmax(A_fm_m))])
 
-    # Whether to draw PRM theory line independently from PM theory.
+    # Whether to draw the PRM Fisher line independently from the P&M Fisher line.
     show_prm_theory_distinct = abs(prm_theory - pm_theory) > 0.015
 
     fig, axes = plt.subplots(
@@ -184,7 +184,7 @@ def make_fig1a(task_str: str = "05", out_dir: str = None):
 
     # --- Vertical alpha markers ---
     # Convention (consistent across PM and PRM):
-    #   theory alpha  -> solid line
+    #   Fisher alpha  -> solid line
     #   empirical opt -> dashed line
     #   fixed alpha   -> dotted, neutral gray
     # Color encodes method (PM = gray, PRM = blue/red curve color).
@@ -263,7 +263,7 @@ def make_fig1a(task_str: str = "05", out_dir: str = None):
         # PRM bbox in case of residual overlap.
         if show_prm_theory_distinct:
             _annot(ax, prm_theory, PRM_COLOR,
-                   rf"theory $\alpha\!=\!{prm_theory:.2f}$",
+                   rf"Fisher $\alpha\!=\!{prm_theory:.2f}$",
                    prm_thy_y, side="right")
         _annot(ax, emp_prm, PRM_COLOR,
                rf"optimal $\alpha\!=\!{emp_prm:.2f}$",
@@ -272,7 +272,7 @@ def make_fig1a(task_str: str = "05", out_dir: str = None):
                rf"fixed $\alpha\!=\!{FIXED_ALPHA_REF:.2f}$",
                Y_TOP, side="left")
         _annot(ax, pm_theory, PM_COLOR,
-               rf"theory $\alpha\!=\!{pm_theory:.2f}$",
+               rf"Fisher $\alpha\!=\!{pm_theory:.2f}$",
                Y_TOP, side="right")
         _annot(ax, emp_pm, PM_COLOR,
                rf"optimal $\alpha\!=\!{emp_pm:.2f}$",
@@ -293,7 +293,7 @@ def make_fig1a(task_str: str = "05", out_dir: str = None):
     # Bottom: line-style legend (linestyle = role; color = method).
     legend_handles = [
         Line2D([0], [0], color="0.2", lw=LW_REF, ls="-",
-               label=r"theory $\alpha$"),
+               label=r"Fisher $\alpha$"),
         Line2D([0], [0], color="0.2", lw=LW_REF, ls="--",
                label=r"empirical optimum"),
         Line2D([0], [0], color=FIX_COLOR, lw=LW_REF, ls=":",
@@ -427,13 +427,13 @@ def make_fig1a_compact(task_str: str = "05", out_dir: str = None,
 
     if show_prm_theory_distinct:
         _annot(prm_theory, PRM_COLOR,
-               rf"theory $\alpha\!=\!{prm_theory:.2f}$", side="right")
+               rf"Fisher $\alpha\!=\!{prm_theory:.2f}$", side="right")
     _annot(prm_acc_emp, PRM_COLOR,
            rf"optimal $\alpha\!=\!{prm_acc_emp:.2f}$", side="right")
     _annot(FIXED_ALPHA_REF, FIX_COLOR,
            rf"fixed $\alpha\!=\!{FIXED_ALPHA_REF:.2f}$", side="left")
     _annot(pm_theory, PM_COLOR,
-           rf"theory $\alpha\!=\!{pm_theory:.2f}$", side="right")
+           rf"Fisher $\alpha\!=\!{pm_theory:.2f}$", side="right")
     _annot(pm_acc_emp, PM_COLOR,
            rf"optimal $\alpha\!=\!{pm_acc_emp:.2f}$", side="left")
 
@@ -1009,7 +1009,7 @@ def make_fig1c(out_dir: str = None, rule: str = "fixed",
     ax.legend(h1 + h2, l1 + l2, loc="lower right", frameon=False, fontsize=8.5)
     ax.axvline(1e-2, color="0.4", ls=":", lw=1.0, alpha=0.7, zorder=0)
 
-    method_name = "PRM-fixed" if variant_tag == "fixed" else "PRM-theory"
+    method_name = "PRM-fixed" if variant_tag == "fixed" else "PRM-Fisher"
     fig.suptitle(
         rf"PRM phase diagram on ImageNet-R 10T ({method_name},"
         r" $\lambda_{\mathrm{prox}}$ sweep)",

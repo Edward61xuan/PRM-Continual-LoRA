@@ -1,0 +1,6 @@
+name: cifar100_10t
+dataset: cifar100
+num_tasks: 10
+epochs: 10
+model: vit_base_patch16_224.augreg2_in21k_ft_in1k
+temperature: 30
