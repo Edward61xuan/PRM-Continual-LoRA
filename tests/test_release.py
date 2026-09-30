@@ -22,6 +22,7 @@ from tools.dataset_prep.prepare import (
     verify_tree,
 )
 from train_prm import (
+    _cached_hf_checkpoint,
     collect_run_metadata,
     get_args,
     local_checkpoint_overlay,
@@ -245,6 +246,24 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn("cached_revision", metadata["checkpoint"])
             self.assertIn("torch", metadata["environment"])
 
+    def test_cached_hf_revision_is_read_before_resolving_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            blob = root / "blobs" / "checkpoint-hash"
+            blob.parent.mkdir()
+            blob.write_bytes(b"checkpoint")
+            cached = root / "snapshots" / "revision-hash" / "model.safetensors"
+            cached.parent.mkdir(parents=True)
+            cached.symlink_to(blob)
+
+            with mock.patch(
+                "huggingface_hub.try_to_load_from_cache", return_value=str(cached)
+            ):
+                path, revision = _cached_hf_checkpoint("timm/example")
+
+            self.assertEqual(path, str(blob.resolve()))
+            self.assertEqual(revision, "revision-hash")
+
     def test_known_timm_override_warnings_are_suppressed(self):
         result = subprocess.run(
             [sys.executable, "-c", "import numpy; import prm.vit"], cwd=ROOT,
@@ -252,6 +271,17 @@ class ReleaseTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("Overwriting vit_", result.stderr)
+
+        sentinel = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import warnings; import train_prm; warnings.warn('prm-sentinel')",
+            ],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(sentinel.returncode, 0, sentinel.stderr)
+        self.assertIn("prm-sentinel", sentinel.stderr)
 
     def test_cuda_requirements_use_direct_wheel_urls(self):
         for name in ("environment.yml", "requirements.txt", "requirements-lock.txt"):

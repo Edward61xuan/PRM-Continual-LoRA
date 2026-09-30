@@ -49,13 +49,11 @@ import json
 import platform
 import subprocess
 import tempfile
-import warnings
 from importlib import metadata as importlib_metadata
 from time import time as ttime
 from copy import deepcopy
 from collections import OrderedDict
 
-warnings.filterwarnings("ignore")
 os.environ.setdefault("TIMM_FUSED_ATTN", "0")
 
 import numpy as np
@@ -322,7 +320,7 @@ def _cached_hf_checkpoint(repo_id, filename=None):
         for candidate in candidates:
             cached = try_to_load_from_cache(repo_id, candidate)
             if isinstance(cached, str) and os.path.isfile(cached):
-                parts = os.path.realpath(cached).split(os.sep)
+                parts = os.path.abspath(cached).split(os.sep)
                 revision = parts[parts.index("snapshots") + 1] if "snapshots" in parts else None
                 return os.path.realpath(cached), revision
     except (ImportError, OSError, ValueError):
