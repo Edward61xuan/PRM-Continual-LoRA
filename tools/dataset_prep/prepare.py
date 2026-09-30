@@ -9,6 +9,12 @@ from pathlib import Path
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+EXPECTED_DATASETS = {
+    "imagenet_r": {"classes": 200, "train": 24000, "val": 6000},
+    "cifar100": {"classes": 100, "train": 50000, "val": 10000},
+    "sdomainet": {"classes": 200, "train": 47532, "val": 20450},
+    "cub200": {"classes": 200, "train": 5994, "val": 5794},
+}
 
 
 def _bundled_manifest(name: str) -> Path:
@@ -30,7 +36,18 @@ def _bundled_manifest(name: str) -> Path:
 
 def _place(src: Path, dst: Path, copy: bool) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
-    if dst.exists() or dst.is_symlink():
+    if dst.is_symlink():
+        try:
+            actual = dst.resolve(strict=True)
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"broken output symlink: {dst}") from exc
+        expected = src.resolve(strict=True)
+        if actual != expected:
+            raise RuntimeError(
+                f"output symlink points to {actual}, expected {expected}: {dst}"
+            )
+        return
+    if dst.exists():
         return
     if copy:
         shutil.copy2(src, dst)
@@ -57,12 +74,39 @@ def _from_manifest(dataset: str, source: Path, output: Path, copy: bool) -> None
         print(f"[{dataset}] {split}: {count} images")
 
 
-def _cifar100(output: Path) -> None:
+def _cifar100(output: Path, source: Path | None, copy: bool) -> None:
     from torchvision.datasets import CIFAR100
 
-    raw = output / "raw"
+    download = source is None
+    if source is None:
+        raw = output / "raw"
+    elif source.is_file():
+        if not source.name.endswith(".tar.gz"):
+            raise ValueError("CIFAR-100 --source must be the official .tar.gz archive or extracted directory")
+        raw = output / "raw"
+        _place(source, raw / "cifar-100-python.tar.gz", copy)
+        # torchvision's download path also performs archive extraction. With
+        # the official archive already present, it validates and extracts it
+        # without fetching it again.
+        download = True
+    elif source.is_dir():
+        if source.name == "cifar-100-python":
+            raw = source.parent
+        elif (source / "cifar-100-python").is_dir():
+            raw = source
+        elif (source / "cifar-100-python.tar.gz").is_file():
+            raw = source
+            download = True
+        else:
+            raise ValueError(
+                "CIFAR-100 --source directory must contain cifar-100-python/ "
+                "or cifar-100-python.tar.gz"
+            )
+    else:
+        raise FileNotFoundError(f"CIFAR-100 source not found: {source}")
+
     for train, split in ((True, "train"), (False, "val")):
-        ds = CIFAR100(raw, train=train, download=True)
+        ds = CIFAR100(raw, train=train, download=download)
         for index, (image, label) in enumerate(ds):
             dst = output / split / str(label) / f"{index:05d}.png"
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -90,9 +134,30 @@ def _cub200(source: Path, output: Path, copy: bool) -> None:
     print(f"[cub200] prepared {len(images)} images using the official split")
 
 
-def verify_tree(root: Path) -> dict[str, int]:
+def _decode_images(paths: list[Path], mode: str, samples: int) -> None:
+    if mode == "none":
+        return
+    from PIL import Image
+
+    selected = paths if mode == "all" else paths[:samples]
+    for path in selected:
+        try:
+            with Image.open(path) as image:
+                image.verify()
+        except Exception as exc:
+            raise ValueError(f"image cannot be decoded: {path}") from exc
+
+
+def verify_tree(
+    root: Path,
+    dataset: str | None = None,
+    decode_images: str = "none",
+    decode_samples: int = 32,
+) -> dict[str, int]:
+    """Validate a prepared tree without changing it."""
     counts = {}
     class_sets = []
+    resolved_by_split = {}
     for split in ("train", "val"):
         split_root = root / split
         if not split_root.is_dir():
@@ -101,16 +166,56 @@ def verify_tree(root: Path) -> dict[str, int]:
         if not classes:
             raise ValueError(f"no class directories in {split_root}")
         class_sets.append(classes)
-        count = sum(
-            1 for p in split_root.rglob("*")
-            if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES
+
+        broken = [p for p in split_root.rglob("*") if p.is_symlink() and not p.exists()]
+        if broken:
+            preview = ", ".join(map(str, broken[:3]))
+            raise ValueError(f"broken symlink(s) under {split_root}: {preview}")
+
+        paths = sorted(
+            (p for p in split_root.rglob("*")
+             if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES),
+            key=lambda p: str(p),
         )
+        empty_classes = [name for name in classes if not any(
+            p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES
+            for p in (split_root / name).iterdir()
+        )]
+        if empty_classes:
+            raise ValueError(f"empty class directories in {split_root}: {empty_classes[:3]}")
+
+        count = len(paths)
         if count == 0:
             raise ValueError(f"no images in {split_root}")
         counts[split] = count
+        resolved_by_split[split] = {p.resolve(strict=True) for p in paths}
+        _decode_images(paths, decode_images, decode_samples)
+
     if class_sets[0] != class_sets[1]:
         raise ValueError("train and val class directories differ")
     counts["classes"] = len(class_sets[0])
+
+    overlap = resolved_by_split["train"] & resolved_by_split["val"]
+    if overlap:
+        preview = ", ".join(map(str, sorted(overlap, key=str)[:3]))
+        raise ValueError(
+            f"train/val resolved-path overlap ({len(overlap)} images): {preview}"
+        )
+
+    if dataset is not None:
+        expected = EXPECTED_DATASETS[dataset]
+        mismatches = {
+            key: (counts[key], expected[key])
+            for key in ("classes", "train", "val")
+            if counts[key] != expected[key]
+        }
+        if mismatches:
+            detail = ", ".join(
+                f"{key}={actual} (expected {wanted})"
+                for key, (actual, wanted) in mismatches.items()
+            )
+            raise ValueError(f"{dataset} count mismatch: {detail}")
+
     print(f"[verify] classes={counts['classes']} train={counts['train']} val={counts['val']}")
     return counts
 
@@ -121,13 +226,19 @@ def main(argv=None) -> None:
     parser.add_argument("--source", type=Path, help="Extracted raw dataset root")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--copy", action="store_true", help="Copy rather than symlink images")
+    parser.add_argument("--expected-dataset", choices=tuple(EXPECTED_DATASETS),
+                        help="For 'verify', require the paper dataset's exact counts")
+    parser.add_argument("--decode-images", choices=("none", "sample", "all"), default="none",
+                        help="Optionally verify that a sample or every image decodes")
+    parser.add_argument("--decode-samples", type=int, default=32,
+                        help="Images per split checked by --decode-images sample")
     args = parser.parse_args(argv)
 
     if args.dataset == "verify":
-        verify_tree(args.output)
+        verify_tree(args.output, args.expected_dataset, args.decode_images, args.decode_samples)
         return
     if args.dataset == "cifar100":
-        _cifar100(args.output)
+        _cifar100(args.output, args.source, args.copy)
     else:
         if args.source is None:
             parser.error(f"{args.dataset} requires --source")
@@ -135,7 +246,7 @@ def main(argv=None) -> None:
             _from_manifest(args.dataset, args.source, args.output, args.copy)
         else:
             _cub200(args.source, args.output, args.copy)
-    verify_tree(args.output)
+    verify_tree(args.output, args.dataset, args.decode_images, args.decode_samples)
 
 
 if __name__ == "__main__":

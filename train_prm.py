@@ -46,16 +46,19 @@ import sys
 import argparse
 import random
 import json
-import warnings
+import platform
+import subprocess
+import tempfile
+from importlib import metadata as importlib_metadata
 from time import time as ttime
 from copy import deepcopy
 from collections import OrderedDict
 
-warnings.filterwarnings("ignore")
 os.environ.setdefault("TIMM_FUSED_ATTN", "0")
 
 import numpy as np
 import torch
+import torchvision
 from torch import nn, Tensor
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.utils.data import DataLoader
@@ -140,6 +143,8 @@ def get_args(argv=None):
     p.add_argument("--logit_type", type=str, default="head_out",
                    choices=("head_out", "sim_imgtext"))
     p.add_argument("--logit_scale", type=float, default=4.605170249938965)
+    p.add_argument("--pretrained_checkpoint", type=str, default="",
+                   help="Optional local timm checkpoint; bypasses network lookup")
 
     # LoRA
     p.add_argument("--rank", type=int, default=10, help="LoRA rank")
@@ -257,10 +262,131 @@ def seed_everything(seed):
 
 
 def write_json(path, payload):
-    """Write JSON after creating the destination's parent directory."""
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(payload, f, indent=2)
+    """Atomically write JSON after creating the destination's parent directory."""
+    destination = os.path.abspath(path)
+    parent = os.path.dirname(destination) or "."
+    os.makedirs(parent, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=parent,
+            prefix=f".{os.path.basename(destination)}.", suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = handle.name
+            json.dump(payload, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def local_checkpoint_overlay(path):
+    """Build a timm file overlay while preserving a symlink's file suffix."""
+    if not path:
+        return None
+    checkpoint_path = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isfile(checkpoint_path):
+        raise FileNotFoundError(f"pretrained checkpoint not found: {checkpoint_path}")
+    return {"file": checkpoint_path}
+
+
+def _git_metadata():
+    root = os.path.dirname(os.path.abspath(__file__))
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True,
+            stderr=subprocess.DEVNULL, timeout=5,
+        ).strip()
+        dirty = bool(subprocess.check_output(
+            ["git", "status", "--porcelain"], cwd=root, text=True,
+            stderr=subprocess.DEVNULL, timeout=5,
+        ).strip())
+        return commit, dirty
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+
+
+def _cached_hf_checkpoint(repo_id, filename=None):
+    """Return a locally cached checkpoint path/revision without network I/O."""
+    if not repo_id:
+        return None, None
+    try:
+        from huggingface_hub import try_to_load_from_cache
+        candidates = [filename] if filename else ["model.safetensors", "pytorch_model.bin"]
+        for candidate in candidates:
+            cached = try_to_load_from_cache(repo_id, candidate)
+            if isinstance(cached, str) and os.path.isfile(cached):
+                parts = os.path.abspath(cached).split(os.sep)
+                revision = parts[parts.index("snapshots") + 1] if "snapshots" in parts else None
+                return os.path.realpath(cached), revision
+    except (ImportError, OSError, ValueError):
+        pass
+    return None, None
+
+
+def collect_run_metadata(args, cl_manager, pretrained_cfg):
+    """Collect provenance without changing the training or evaluation path."""
+    commit, dirty = _git_metadata()
+    split_metadata = {}
+    for train, split in ((True, "train"), (False, "val")):
+        dataset = get_path_dataset(args.dataset, args.data_root, train=train)
+        per_class = {str(cls): len(paths) for cls, paths in dataset.class_imgpath_dict.items()}
+        split_metadata[split] = {
+            "images": int(sum(per_class.values())),
+            "classes": int(len(per_class)),
+            "images_per_class": per_class,
+        }
+
+    cached_path, cached_revision = _cached_hf_checkpoint(
+        pretrained_cfg.get("hf_hub_id"), pretrained_cfg.get("hf_hub_filename")
+    )
+    checkpoint = {
+        "model": str(args.model),
+        "local_path": (
+            os.path.realpath(os.path.expanduser(args.pretrained_checkpoint))
+            if args.pretrained_checkpoint else None
+        ),
+        "hf_hub_id": pretrained_cfg.get("hf_hub_id"),
+        "hf_hub_filename": pretrained_cfg.get("hf_hub_filename"),
+        "cached_path": cached_path,
+        "cached_revision": cached_revision,
+        "url": pretrained_cfg.get("url"),
+    }
+    gpu = None
+    if torch.cuda.is_available():
+        gpu = {
+            "name": torch.cuda.get_device_name(0),
+            "capability": list(torch.cuda.get_device_capability(0)),
+            "count_visible": int(torch.cuda.device_count()),
+        }
+    return {
+        "config": dict(vars(args)),
+        "git_commit": commit,
+        "git_dirty": dirty,
+        "environment": {
+            "python": platform.python_version(),
+            "torch": torch.__version__,
+            "torchvision": torchvision.__version__,
+            "timm": timm.__version__,
+            "numpy": np.__version__,
+            "pillow": importlib_metadata.version("Pillow"),
+            "huggingface_hub": importlib_metadata.version("huggingface-hub"),
+            "cuda_runtime": torch.version.cuda,
+            "cudnn": torch.backends.cudnn.version(),
+            "gpu": gpu,
+        },
+        "dataset_metadata": {
+            "root": os.path.realpath(os.path.expanduser(args.data_root)),
+            **split_metadata,
+        },
+        "class_order": [int(x) for x in cl_manager.all_classes],
+        "task_classes": [[int(x) for x in task] for task in cl_manager.task_class_list],
+        "checkpoint": checkpoint,
+    }
 
 
 def set_model_mode(model, training, taskid=0):
@@ -827,6 +953,7 @@ def main():
     fisher = init_fisher_storage()
     model = None
     pretrained_cfg = None
+    run_metadata = None
     start_time = ttime()
     per_task_meta = {}
 
@@ -839,6 +966,7 @@ def main():
         model, pretrained_cfg, completed_taskid = rebuild_model_from_prefix(
             loaded, args, timm.create_model,
         )
+        run_metadata = collect_run_metadata(args, cl_manager, pretrained_cfg)
         # Restore label_map / param_cache / fisher (deep copies, materialized
         # back onto GPU for fisher tensors lazily during accumulate_fisher).
         label_map = dict(loaded.get("label_map") or {})
@@ -903,12 +1031,15 @@ def main():
                 "logit_scale": args.logit_scale,
                 "logit_scale_trainable": False,
             }
+            pretrained_overlay = local_checkpoint_overlay(args.pretrained_checkpoint)
             model = timm.create_model(
                 args.model, pretrained=True, pretrained_strict=False,
                 num_classes=512 if args.logit_type == "sim_imgtext" else len(task_classes),
                 other_args_dict=other_args,
+                pretrained_cfg_overlay=pretrained_overlay,
             )
             pretrained_cfg = deepcopy(model.pretrained_cfg)
+            run_metadata = collect_run_metadata(args, cl_manager, pretrained_cfg)
 
         # Apply LoRA adapters
         apply_lora(model, taskid, rank=args.rank, eps=args.eps,
@@ -979,6 +1110,10 @@ def main():
                 "consolidation": args.consolidation,
                 "model": args.model,
                 "seed": args.seed,
+                **(run_metadata or {}),
+                "acc_matrix": acc_mat[:taskid + 1, :taskid + 1].tolist(),
+                "average_accuracy_by_task": acc_list[:taskid + 1].tolist(),
+                "elapsed_seconds": float(elapsed),
             }
             if args.prm_method == "gated":
                 results.update({
@@ -1000,6 +1135,7 @@ def main():
                 "val_acc": float(avg_acc),
                 "aaa_so_far": float(aaa),
                 "forgetting_so_far": float(forgetting),
+                "acc_matrix": acc_mat[:taskid + 1, :taskid + 1].tolist(),
             })
             header = {
                 "seed": int(args.seed),
@@ -1009,6 +1145,7 @@ def main():
                 "perturbation_eps": float(args.eps or 0.0),
                 "model": str(args.model),
                 "num_tasks": int(args.num_tasks),
+                **(run_metadata or {}),
             }
             append_per_task_summary(args.results_file, header, task_entry)
 

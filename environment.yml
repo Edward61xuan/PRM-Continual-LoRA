@@ -9,7 +9,6 @@ dependencies:
   - setuptools=82.0.1
   - wheel=0.46.3
   - pip:
-      - --extra-index-url https://download.pytorch.org/whl/cu121
       - annotated-types==0.7.0
       - asttokens==3.0.1
       - certifi==2022.12.7
@@ -77,8 +76,8 @@ dependencies:
       - tifffile==2025.5.10
       - timm==0.9.12
       - tomli==2.4.1
-      - torch==2.1.0+cu121
-      - torchvision==0.16.0+cu121
+      - torch @ https://download.pytorch.org/whl/cu121/torch-2.1.0%2Bcu121-cp310-cp310-linux_x86_64.whl
+      - torchvision @ https://download.pytorch.org/whl/cu121/torchvision-0.16.0%2Bcu121-cp310-cp310-linux_x86_64.whl
       - tqdm==4.66.1
       - traitlets==5.14.3
       - triton==2.1.0

@@ -34,6 +34,18 @@ python -m pip install -r requirements.txt
 
 `requirements-lock.txt` records the complete release environment.
 
+The CUDA wheels use direct URLs so ordinary dependencies are resolved only
+from the configured PyPI index. The default model is cached by Hugging Face
+under `${HF_HOME:-~/.cache/huggingface}/hub`. Once it is cached, run without
+network access using:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python train_prm.py ...
+```
+
+Alternatively, pass the cached `model.safetensors` (or another compatible timm
+checkpoint) explicitly with `--pretrained_checkpoint /path/to/model.safetensors`.
+
 ## Prepare data
 
 Loaders expect `DATA_ROOT/{train,val}/<class>/<image>`. The preparation utility
@@ -43,14 +55,24 @@ uses the bundled paper/P&M-compatible train/validation manifests:
 python tools/dataset_prep/prepare.py imagenet_r \
   --source /path/to/imagenet-r --output data/imagenet-r
 python tools/dataset_prep/prepare.py cifar100 --output data/cifar100
+# Reuse an official local archive or extracted cifar-100-python directory:
+python tools/dataset_prep/prepare.py cifar100 \
+  --source /path/to/cifar-100-python.tar.gz --output data/cifar100
 python tools/dataset_prep/prepare.py sdomainet \
   --source /path/to/domainnet --output data/domainnet
 python tools/dataset_prep/prepare.py cub200 \
   --source /path/to/CUB_200_2011 --output data/cub200
 ```
 
-Use `--copy` when symlinks are unsuitable. Validate an existing tree with
-`python tools/dataset_prep/prepare.py verify --output DATA_ROOT`. See
+Use `--copy` when symlinks are unsuitable. Validate an existing tree with:
+
+```bash
+python tools/dataset_prep/prepare.py verify --output DATA_ROOT \
+  --expected-dataset DATASET
+```
+
+Add `--decode-images sample` (default 32 images per split) or
+`--decode-images all` to check image decoding. See
 [the data guide](tools/dataset_prep/README.md) for provenance and split details.
 
 ## Paper results and reproduction
@@ -122,6 +144,11 @@ python train_prm.py --dataset cifar100 --data_root data/cifar100 \
 
 AMP and class shuffling can be disabled with `--no-use_amp` and
 `--no-shuffle_classes`.
+
+The custom PRM ViT factories intentionally replace timm's factories for the
+same public model identifiers so pretrained checkpoint selection stays
+compatible with the paper runs. The known registration warnings are suppressed
+locally; unrelated timm registry warnings remain visible.
 
 ## Diagnostics, figures, and tests
 

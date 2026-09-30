@@ -14,6 +14,7 @@ Based on:
 """
 
 import math
+import warnings
 from collections import OrderedDict
 from functools import partial
 from typing import Any, Callable, Dict, Optional, Set, Sequence, Tuple, Type, Union, List
@@ -647,7 +648,18 @@ def _create_vision_transformer(
     )
 
 
-@register_model
+def _register_prm_override(fn):
+    """Register an intentional timm factory override without hiding other warnings."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=rf"Overwriting {fn.__name__} in registry.*",
+            category=UserWarning,
+        )
+        return register_model(fn)
+
+
+@_register_prm_override
 def vit_base_patch16_224(pretrained: bool = False, **kwargs) -> VisionTransformer:
     model_args = dict(
         patch_size=16, embed_dim=768, depth=12, num_heads=12,
@@ -657,7 +669,7 @@ def vit_base_patch16_224(pretrained: bool = False, **kwargs) -> VisionTransforme
     )
 
 
-@register_model
+@_register_prm_override
 def vit_base_patch16_clip_224(pretrained: bool = False, **kwargs) -> VisionTransformer:
     model_args = dict(
         patch_size=16, embed_dim=768, depth=12, num_heads=12,
@@ -668,7 +680,7 @@ def vit_base_patch16_clip_224(pretrained: bool = False, **kwargs) -> VisionTrans
     )
 
 
-@register_model
+@_register_prm_override
 def vit_base_patch32_clip_quickgelu_224(
     pretrained: bool = False, **kwargs
 ) -> VisionTransformer:
@@ -682,7 +694,7 @@ def vit_base_patch32_clip_quickgelu_224(
     )
 
 
-@register_model
+@_register_prm_override
 def vit_base_patch16_clip_quickgelu_224(
     pretrained: bool = False, **kwargs
 ) -> VisionTransformer:
@@ -696,7 +708,7 @@ def vit_base_patch16_clip_quickgelu_224(
     )
 
 
-@register_model
+@_register_prm_override
 def vit_large_patch14_clip_quickgelu_224(
     pretrained: bool = False, **kwargs
 ) -> VisionTransformer:

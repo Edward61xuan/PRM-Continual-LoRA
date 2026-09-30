@@ -20,7 +20,7 @@ The bundled S-DomainNet manifests reflect the actual released experiment
 environment and span all six DomainNet domains. They are authoritative for
 code-level reproduction.
 
-## arXiv reference values
+## Paper reference values
 
 Values are mean ± standard deviation over three seeds. Acc is final average
 seen-task accuracy and AAA is average anytime accuracy, in percentage points.
@@ -40,3 +40,9 @@ per-seed outputs are not pre-bundled in the repository. Minor nondeterminism can
 arise from CUDA kernels and dependency/hardware differences. Report the
 environment, GPU, three generated seeds, mean, and population standard
 deviation when comparing a reproduction to these values.
+
+Each main JSON records the effective CLI configuration, Git state, package and
+CUDA/GPU versions, data-root counts, class/task order, checkpoint source,
+incremental accuracy matrix, and elapsed time. The neighboring
+`seedN.json.per_task.json` sidecar retains the same run provenance plus each
+task's diagnostics and accuracy-matrix snapshot.

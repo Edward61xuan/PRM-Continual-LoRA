@@ -6,8 +6,8 @@
 
 For `reproduce_all.sh`, `DATA_ROOTS` is a directory containing the prepared
 subdirectories `imagenet-r`, `cifar100`, `domainnet`, and `cub200`. Each command
-writes one incremental JSON result and one `_per_task.json` sidecar below
-`outputs/<setting>/<variant>/`.
+writes one incremental JSON result and one `.json.per_task.json` sidecar (for
+example, `seed0.json.per_task.json`) below `outputs/<setting>/<variant>/`.
 
 Run one setting directly when scheduling jobs separately:
 
