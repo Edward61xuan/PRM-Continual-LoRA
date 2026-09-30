@@ -10,6 +10,9 @@ under `train/` and `val/`.
 - **CIFAR-100:** the preparer uses `torchvision.datasets.CIFAR100` and the
   [official archive](https://www.cs.toronto.edu/~kriz/cifar.html); the official
   training split becomes `train` and the official test split becomes `val`.
+  Without `--source` it downloads into `<output>/raw`. To avoid a download,
+  pass either the official `cifar-100-python.tar.gz`, the extracted
+  `cifar-100-python/` directory, or a directory containing either one.
 - **S-DomainNet:** download and extract all six domains from the
   [official DomainNet release](http://ai.bu.edu/DomainNet/) below
   `--source`. The bundled P&M-compatible manifests span `clipart`, `infograph`,
@@ -22,3 +25,16 @@ under `train/` and `val/`.
 The exact ImageNet-R and S-DomainNet manifests are bundled under `manifests/`
 and versioned with the repository. `tools/imagenet_r_classnames.txt` contains
 the 200 names used by the optional image-text head.
+
+Preparation automatically checks the expected paper-dataset class and image
+counts, empty classes, broken symlinks, and resolved-path overlap between train
+and validation. Audit an existing tree explicitly with, for example:
+
+```bash
+python tools/dataset_prep/prepare.py verify --output data/cub200 \
+  --expected-dataset cub200 --decode-images sample
+```
+
+Use `--decode-images all` for a complete Pillow decode scan. Existing output
+symlinks are reused only when they resolve to the requested source; broken or
+wrong-target symlinks produce an error instead of being silently skipped.
