@@ -21,7 +21,12 @@ from tools.dataset_prep.prepare import (
     _place,
     verify_tree,
 )
-from train_prm import collect_run_metadata, get_args, write_json
+from train_prm import (
+    collect_run_metadata,
+    get_args,
+    local_checkpoint_overlay,
+    write_json,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -206,6 +211,20 @@ class ReleaseTests(unittest.TestCase):
             self.assertTrue(destination.is_file())
             self.assertEqual(json.loads(destination.read_text()), {"AAA": 0.5})
             self.assertEqual(list(destination.parent.glob("*.tmp")), [])
+
+    def test_local_safetensors_checkpoint_preserves_symlink_suffix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            blob = root / "checkpoint-blob"
+            blob.write_bytes(b"checkpoint")
+            checkpoint = root / "model.safetensors"
+            checkpoint.symlink_to(blob)
+
+            overlay = local_checkpoint_overlay(str(checkpoint))
+
+            self.assertEqual(overlay, {"file": str(checkpoint.absolute())})
+            self.assertTrue(overlay["file"].endswith(".safetensors"))
+            self.assertNotEqual(overlay["file"], str(checkpoint.resolve()))
 
     def test_run_metadata_records_reproduction_context(self):
         with tempfile.TemporaryDirectory() as tmp:

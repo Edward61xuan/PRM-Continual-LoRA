@@ -286,6 +286,16 @@ def write_json(path, payload):
             os.unlink(temporary)
 
 
+def local_checkpoint_overlay(path):
+    """Build a timm file overlay while preserving a symlink's file suffix."""
+    if not path:
+        return None
+    checkpoint_path = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isfile(checkpoint_path):
+        raise FileNotFoundError(f"pretrained checkpoint not found: {checkpoint_path}")
+    return {"file": checkpoint_path}
+
+
 def _git_metadata():
     root = os.path.dirname(os.path.abspath(__file__))
     try:
@@ -1023,16 +1033,7 @@ def main():
                 "logit_scale": args.logit_scale,
                 "logit_scale_trainable": False,
             }
-            pretrained_overlay = None
-            if args.pretrained_checkpoint:
-                checkpoint_path = os.path.realpath(
-                    os.path.expanduser(args.pretrained_checkpoint)
-                )
-                if not os.path.isfile(checkpoint_path):
-                    raise FileNotFoundError(
-                        f"pretrained checkpoint not found: {checkpoint_path}"
-                    )
-                pretrained_overlay = {"file": checkpoint_path}
+            pretrained_overlay = local_checkpoint_overlay(args.pretrained_checkpoint)
             model = timm.create_model(
                 args.model, pretrained=True, pretrained_strict=False,
                 num_classes=512 if args.logit_type == "sim_imgtext" else len(task_classes),
