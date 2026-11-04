@@ -6,9 +6,9 @@ Mattering: Proximity Regularized Merging for Continual LoRA Adaptation**
 
 **Accepted at NeurIPS 2026.**
 
-Authors: Yixuan Liu\*, Yuhao Sun\*, Sen Song, and Jin Li.
+Authors: Yixuan Liu<sup>*</sup>, Yuhao Sun<sup>*</sup>, Sen Song<sup>†</sup>, and Jin Li<sup>†</sup>.
 
-*Yixuan Liu and Yuhao Sun contributed equally.*
+\* Equal contribution. † Corresponding authors.
 
 This release focuses on the two variants used for the paper's main claims:
 
