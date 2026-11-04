@@ -27,3 +27,7 @@ jobs:
         run: |
           MPLBACKEND=Agg python create_figures/plot_figure2.py
           MPLBACKEND=Agg python create_figures/plot_figure3.py
+      - name: Validate citation metadata
+        run: |
+          python -m pip install cffconvert==2.0.0
+          cffconvert --validate

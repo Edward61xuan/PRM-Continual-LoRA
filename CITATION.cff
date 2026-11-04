@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite the arXiv paper below."
+message: "If you use this software, please cite the NeurIPS 2026 paper below."
 title: "Proximity Regularized Merging for Continual LoRA Adaptation"
 type: software
 license: MIT
@@ -12,10 +12,10 @@ authors:
     given-names: Sen
   - family-names: Li
     given-names: Jin
-repository-code: "https://github.com/Edward61xuan/DSSPM"
-date-released: 2026-09-29
+repository-code: "https://github.com/Edward61xuan/PRM-Continual-LoRA"
 preferred-citation:
-  type: article
+  type: conference-paper
+  collection-title: "Advances in Neural Information Processing Systems"
   title: "When the Merge Coefficient Stops Mattering: Proximity Regularized Merging for Continual LoRA Adaptation"
   authors:
     - family-names: Liu

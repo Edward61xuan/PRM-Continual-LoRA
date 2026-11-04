@@ -4,7 +4,11 @@ Official companion implementation for **When the Merge Coefficient Stops
 Mattering: Proximity Regularized Merging for Continual LoRA Adaptation**
 ([arXiv:2609.32332](https://arxiv.org/abs/2609.32332)).
 
-Authors: Yixuan Liu, Yuhao Sun, Sen Song, and Jin Li.
+**Accepted at NeurIPS 2026.**
+
+Authors: Yixuan Liu<sup>*</sup>, Yuhao Sun<sup>*</sup>, Sen Song<sup>†</sup>, and Jin Li<sup>†</sup>.
+
+\* Equal contribution. † Corresponding authors.
 
 This release focuses on the two variants used for the paper's main claims:
 
@@ -111,6 +115,29 @@ For matched P&M controls, add `--pm-control`; this sets
 `prm_prox_weight=0` while keeping the selected fixed/Fisher rule. Results go to
 `outputs/<config>/<method>/seed<N>.json`.
 
+Ordinary `fixed` runs skip Fisher computation and storage. To enable the
+historical Fisher-based diagnostics (including `q_t`), add
+`--fisher_diagnostics`:
+
+```bash
+python scripts/run_config.py configs/imagenet_r_10t.yaml \
+  --method fixed --seeds 0 1 2 --data-root data/imagenet-r \
+  --fisher_diagnostics
+```
+
+Without these diagnostics, unmeasured `q_t` and update-norm fields are `null`.
+The `fisher` method always computes Fisher for its coefficient rule. Requesting
+`--alpha_sweep_tasks` also enables Fisher from the first task, since sweeps
+use historical Fisher and a Fisher-coefficient reference. When saving a fixed
+prefix for Fisher-based norm-matched diagnostics, enable `--fisher_diagnostics`
+while building the prefix as well as when resuming it.
+
+Cost comparisons should use ordinary runs without `--fisher_diagnostics` or
+alpha sweeps. Skipping the extra Fisher data pass changes RNG consumption
+(data shuffling and augmentation), so default fixed runs are not guaranteed to
+match historical per-seed results exactly. Enable `--fisher_diagnostics` to
+retain the previous Fisher/diagnostic execution path.
+
 ### Run CIFAR-100, S-DomainNet, and CUB-200
 
 The same launcher covers every other paper setting. Change `--method fixed` to
@@ -168,15 +195,18 @@ claim GPU end-to-end reproducibility.
 ## Citation
 
 ```bibtex
-@article{liu2026mergecoefficient,
+@inproceedings{liu2026mergecoefficient,
   title   = {When the Merge Coefficient Stops Mattering: Proximity Regularized
              Merging for Continual LoRA Adaptation},
   author  = {Liu, Yixuan and Sun, Yuhao and Song, Sen and Li, Jin},
-  journal = {arXiv preprint arXiv:2609.32332},
+  booktitle = {Advances in Neural Information Processing Systems},
   year    = {2026},
   url     = {https://arxiv.org/abs/2609.32332}
 }
 ```
 
 Machine-readable metadata is also available in [CITATION.cff](CITATION.cff).
-The code is released under the [MIT License](LICENSE).
+Original PRM code is released under the [MIT License](LICENSE).
+Third-party code retains its original license: `prm/vit.py` is adapted from
+timm 0.9.12 under [Apache-2.0](licenses/timm-APACHE-2.0.txt). See
+[third-party notices](THIRD_PARTY_NOTICES.md) for attribution and modifications.

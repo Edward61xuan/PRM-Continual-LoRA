@@ -294,7 +294,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn("reported on arXiv", readme)
         self.assertIn("reported in the paper", readme)
         self.assertIn("Qiu et al., 2025", readme)
-        self.assertIn("@article{liu2026mergecoefficient", readme)
+        self.assertIn("@inproceedings{liu2026mergecoefficient", readme)
         for setting in (
             "ImageNet-R 5T", "ImageNet-R 10T", "ImageNet-R 20T",
             "CIFAR-100 10T", "CIFAR-100 20T", "S-DomainNet 5T",
