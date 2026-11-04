@@ -188,6 +188,10 @@ def get_args(argv=None):
     # Output
     p.add_argument("--results_file", type=str, default="",
                    help="Path to save JSON results")
+    p.add_argument("--fisher_diagnostics", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Compute and retain per-task Fisher/q_t for fixed runs. "
+                        "Fisher coefficients and alpha sweeps always require Fisher.")
 
     # Diagnostic alpha sweep for the published coefficient rules.
     p.add_argument("--alpha_sweep_tasks", type=int, nargs="+", default=[],
@@ -253,6 +257,27 @@ def get_args(argv=None):
 # ---------------------------------------------------------------------------
 # Utility functions
 # ---------------------------------------------------------------------------
+
+def needs_fisher(args):
+    """Sweeps require the full history, including tasks before the first sweep."""
+    return (
+        args.prm_method in ("fisher", "gated", "empirical", "2d")
+        or args.fisher_diagnostics
+        or bool(args.alpha_sweep_tasks)
+    )
+
+
+def validate_fisher_history(model, fisher, taskid):
+    """A fixed-only prefix cannot supply missing historical Fisher statistics."""
+    for module in model.modules():
+        if isinstance(module, QkvWithLoRA):
+            missing = [i for i in range(taskid) if i not in fisher.get(str(module.layer), {})]
+            if missing:
+                raise ValueError(
+                    f"Missing Fisher history for layer {module.layer}, tasks {missing}. "
+                    "Regenerate the prefix with --fisher_diagnostics or --prm_method fisher."
+                )
+
 
 def seed_everything(seed):
     random.seed(seed)
@@ -524,6 +549,9 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
     print(f"\n{'='*80}")
     print(f"Task [{taskid+1}/{cl_manager.num_tasks}] -- Classes: {task_classes}")
     print(f"{'='*80}")
+    use_fisher = needs_fisher(args)
+    if use_fisher:
+        validate_fisher_history(model, fisher, taskid)
 
     # Update label maps
     g2l_map = make_label_maps(taskid, task_classes)
@@ -548,13 +576,14 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
 
     criterion = nn.CrossEntropyLoss().cuda()
 
-    # Initialize Fisher accumulators for this task
-    for module in model.modules():
-        if isinstance(module, QkvWithLoRA):
-            name = f"{module.layer}"
-            fisher[name][taskid] = torch.zeros_like(
-                module.qkv.weight.data
-            ).to(module.qkv.weight.device)
+    # Ordinary fixed runs allocate no Fisher tensors.
+    if use_fisher:
+        for module in model.modules():
+            if isinstance(module, QkvWithLoRA):
+                name = f"{module.layer}"
+                fisher[name][taskid] = torch.zeros_like(
+                    module.qkv.weight.data
+                ).to(module.qkv.weight.device)
 
     # Set up optimizer and scheduler
     param_groups = set_learning_rates(model, args.lr, args.lr_scale)
@@ -621,9 +650,14 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
     # Cache per-task parameters (head weights, LoRA params)
     cache_task_params(model, taskid, param_cache)
 
-    # Fisher accumulation (needed for PRM-Fisher and diagnostic analysis;
-    # for flexibility and to enable post-hoc analysis).
-    accumulate_fisher(model, dataloader, criterion, fisher, taskid)
+    # This extra data pass also consumes RNG (shuffle/augmentation). Skipping
+    # it changes subsequent RNG state relative to historical diagnostic runs.
+    if use_fisher:
+        accumulate_fisher(model, dataloader, criterion, fisher, taskid)
+    else:
+        # Fisher used to switch the model to eval mode as a side effect.
+        # Keep write-in/evaluation frozen even when that pass is skipped.
+        set_model_mode(model, training=False)
 
     # Stage 2: Write-Back
     # Capture raw Stage-1 interference and update magnitude BEFORE any
@@ -631,9 +665,13 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
     # pre-merge state. compute_q_t only reads fisher[0..taskid-1] which
     # is populated above, and delta_t = B_t @ A_t from the just-trained
     # LoRA block.
-    _q_t, _q_per_layer, _delta_norm_F, _delta_norm_per_layer = compute_q_t(
-        model, fisher, taskid, return_delta_norms=True,
-    )
+    if use_fisher:
+        _q_t, _q_per_layer, _delta_norm_F, _delta_norm_per_layer = compute_q_t(
+            model, fisher, taskid, return_delta_norms=True,
+        )
+    else:
+        _q_t, _q_per_layer = None, {}
+        _delta_norm_F, _delta_norm_per_layer = None, {}
     _alpha_chosen = None
     _alpha_method = args.prm_method
 
@@ -652,8 +690,8 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
             seed=args.seed, method=method_tag,
             prox_weight=float(args.prm_prox_weight or 0.0),
             train_loss_final=train_loss_final,
-            q_t=float(_q_t),
-            delta_norm_F=float(_delta_norm_F),
+            q_t=_q_t,
+            delta_norm_F=_delta_norm_F,
             delta_norm_per_layer=_delta_norm_per_layer,
             extra={
                 "dataset": args.dataset,
@@ -665,8 +703,8 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
         if isinstance(per_task_meta, dict):
             per_task_meta[int(taskid)] = {
                 "task_id": int(taskid),
-                "q_t": float(_q_t),
-                "delta_norm_F": float(_delta_norm_F),
+                "q_t": float(_q_t) if _q_t is not None else None,
+                "delta_norm_F": float(_delta_norm_F) if _delta_norm_F is not None else None,
                 "delta_norm_per_layer": {
                     k: float(v) for k, v in _delta_norm_per_layer.items()
                 },
@@ -852,8 +890,8 @@ def train_one_task(model, args, cl_manager, label_map, pretrained_cfg, param_cac
     if isinstance(per_task_meta, dict):
         per_task_meta[int(taskid)] = {
             "task_id": int(taskid),
-            "q_t": float(_q_t),
-            "delta_norm_F": float(_delta_norm_F),
+            "q_t": float(_q_t) if _q_t is not None else None,
+            "delta_norm_F": float(_delta_norm_F) if _delta_norm_F is not None else None,
             "delta_norm_per_layer": {k: float(v) for k, v in _delta_norm_per_layer.items()},
             "alpha_chosen": (float(_alpha_chosen) if _alpha_chosen is not None else None),
             "alpha_method": str(_alpha_method),
@@ -967,8 +1005,7 @@ def main():
             loaded, args, timm.create_model,
         )
         run_metadata = collect_run_metadata(args, cl_manager, pretrained_cfg)
-        # Restore label_map / param_cache / fisher (deep copies, materialized
-        # back onto GPU for fisher tensors lazily during accumulate_fisher).
+        # Restore cached parameters; restore Fisher below only when needed.
         label_map = dict(loaded.get("label_map") or {})
         for k, v in (loaded.get("param_cache") or {}).items():
             if isinstance(v, dict):
@@ -980,12 +1017,18 @@ def main():
                 param_cache[k] = v.cuda()
             else:
                 param_cache[k] = v
-        for k, v in (loaded.get("fisher") or {}).items():
+        # Drop historical diagnostic tensors when resuming an ordinary fixed
+        # run; only Fisher-dependent runs need to materialize them on the GPU.
+        loaded_fisher = loaded.pop("fisher", None)
+        if not needs_fisher(args):
+            loaded_fisher = None
+        for k, v in (loaded_fisher or {}).items():
             fisher[k] = {
                 int(tk) if isinstance(tk, (int, str)) and str(tk).lstrip('-').isdigit() else tk:
                     (tv.cuda() if isinstance(tv, torch.Tensor) else tv)
                 for tk, tv in (v.items() if isinstance(v, dict) else [])
             }
+        del loaded_fisher
         target_taskid = args.train_task - 1
         assert target_taskid == completed_taskid + 1, (
             f"--train_task={args.train_task} (taskid={target_taskid}) must "

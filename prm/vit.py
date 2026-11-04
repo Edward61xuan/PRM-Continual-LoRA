@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2020, Ross Wightman
+# Modified for PRM; see THIRD_PARTY_NOTICES.md and licenses/timm-APACHE-2.0.txt.
 """
 Vision Transformer (ViT) with perturbation-aware forward pass.
 
@@ -11,6 +14,25 @@ enabling perturbation-aware training.
 Based on:
   'An Image Is Worth 16x16 Words' - https://arxiv.org/abs/2010.11929
   timm 0.9.12 by Ross Wightman
+
+Upstream source:
+  https://github.com/huggingface/pytorch-image-models/blob/v0.9.12/timm/models/vision_transformer.py
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy at http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+Upstream acknowledgments:
+  * The paper authors for releasing code and weights, thanks!
+  * I fixed my class token impl based on Phil Wang's https://github.com/lucidrains/vit-pytorch
+  * Simple transformer style inspired by Andrej Karpathy's https://github.com/karpathy/minGPT
+  * Bert reference code checks against Huggingface Transformers and Tensorflow Bert
+
+Hacked together by / Copyright 2020, Ross Wightman
 """
 
 import math

@@ -20,6 +20,13 @@ The bundled S-DomainNet manifests reflect the actual released experiment
 environment and span all six DomainNet domains. They are authoritative for
 code-level reproduction.
 
+Ordinary fixed runs skip Fisher and emit `null` for unmeasured diagnostics.
+Use `--fisher_diagnostics` to retain the historical fixed-run Fisher and
+`q_t` path used for analysis. Fisher coefficients and requested alpha sweeps
+still require Fisher. Skipping the Fisher data pass changes RNG consumption,
+so the default fixed path need not match historical results seed-for-seed.
+For cost comparisons, omit extra diagnostics and alpha sweeps.
+
 ## Paper reference values
 
 Values are mean ± standard deviation over three seeds. Acc is final average
